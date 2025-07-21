@@ -9,10 +9,6 @@ import java.time.Instant;
  * @author youtuku
  */
 public class DataStore {
-    static final String KEY_PROC_NAME = "ProcessName";
-    static final String KEY_START_TIME = "StartTime";
-    static final String KEY_DURATION = "Duration";
-    
     private final String processName;
     private final Instant startTime;
     private final Duration duration;
@@ -29,7 +25,7 @@ public class DataStore {
         this.duration = duration;
     }
 
-    String getProcName(){
+    String getProcessName(){
         return processName;
     }
 

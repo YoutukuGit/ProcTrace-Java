@@ -52,4 +52,13 @@ public class TimeCalculator {
         String name = ongoingEvents.get(key);
         return new DataStore(name, startTime, duration);
     }
+
+    /**
+     * 获取进程名称
+     * @param pid 进程的PID
+     * @return 进程名称，如果不存在则返回null
+     */
+    String getEventName(long pid) {
+        return ongoingEvents.get(pid);
+    }
 }

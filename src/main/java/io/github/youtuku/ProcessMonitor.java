@@ -1,9 +1,8 @@
 package io.github.youtuku;
 
-import java.io.FileReader;
-import java.io.IOException;
+import java.io.File;
+import java.sql.SQLException;
 import java.time.Instant;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -11,11 +10,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
-
-import com.google.gson.Gson;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
-import com.google.gson.stream.JsonReader;
 
 /**
  * 进程监控核心类,负责:
@@ -45,23 +39,11 @@ public class ProcessMonitor {
     /**
      * 从配置文件中读取目标进程列表
      * @return 包含所有目标进程名的列表(已去除空格)
-     * @throws IOException 当配置文件不存在、格式错误或读取失败时抛出
+     * @throws SQLException 当配置文件不存在、格式错误或读取失败时抛出
      */
-    private List<String> getTargetProcesses() throws IOException{
-        try (JsonReader reader = new JsonReader(new FileReader(config.configFile))) {
-            JsonObject jsonObject = new Gson().fromJson(reader, JsonObject.class);
-            JsonElement element = jsonObject.get(AppConfig.CONFIG_KEY_DEFAULT);
-            
-            if (element == null || !element.isJsonPrimitive()) {
-                throw new IOException("配置文件格式错误: 缺少 '" + AppConfig.CONFIG_KEY_DEFAULT + "' 字段");
-            }
-            
-            String procString = element.getAsString();
-            return Arrays.stream(procString.split(","))
-                .map(String::trim)
-                .filter(s -> !s.isEmpty())
-                .collect(Collectors.toList());
-        }
+    private List<String> getTargetProcesses() throws SQLException{
+        return config.getTargetProcesses();
+        
     }
 
     /**
@@ -76,16 +58,18 @@ public class ProcessMonitor {
      */
     private boolean isTargetProcess(ProcessHandle ph, List<String> targets){
         return ph.info().command()
-            .map(cmd -> targets.stream().anyMatch(cmd::contains))
-            .orElse(false);
+            .map(cmd -> {
+                String baseName = new File(cmd).getName();
+                return targets.contains(baseName);
+            }).orElse(false);
     }
 
     /**
      * 扫描系统所有进程,匹配配置文件中的目标进程
      * @return 包含所有匹配进程的映射表(Key: PID, Value: 进程句柄)
-     * @throws IOException 当配置文件读取失败或格式错误时抛出
+     * @throws SQLException 当获取目标进程列表失败时抛出
      */
-    private Map<Long, ProcessHandle> findMatchingProcess() throws IOException{
+    private Map<Long, ProcessHandle> findMatchingProcess() throws SQLException{
         List<String> targets = getTargetProcesses();
         return ProcessHandle.allProcesses()
             .filter(ph -> isTargetProcess(ph, targets))
@@ -96,21 +80,21 @@ public class ProcessMonitor {
 
     /**
      * 开始监控进程。首先扫描一次当前匹配的进程,然后每隔10秒扫描一次新进程
-     * @throws IOException 当初始进程扫描失败时抛出
+     * @throws SQLException 当初始进程扫描失败时抛出
      */
-    public void startMonitoring() throws IOException{
+    public void startMonitoring() throws SQLException{
         try {
             findMatchingProcess().entrySet().stream()
                 .map(Map.Entry::getValue)
                 .forEach(this::monitorProcess);
-        } catch (IOException e) {
+        } catch (SQLException e) {
             System.err.println("初始进程扫描失败: " + e.getMessage());
         }
         
         SCHEDULER.scheduleAtFixedRate(() -> {
             try {
                 scanNewProcess();
-            } catch (IOException e) {
+            } catch (SQLException e) {
                 System.err.println("[" + Instant.now() + "] 进程扫描异常: " + e.getMessage());
             }
         }, 0, 10, TimeUnit.SECONDS);
@@ -118,18 +102,19 @@ public class ProcessMonitor {
 
     /**
      * 停止监控进程。保存所有未完成的进程数据,并关闭调度器
+     * @implNote 即使保存某些进程数据时失败，也会继续尝试保存其他进程数据
      */
-    void stopMonitoring(){
+    void stopMonitoring() throws SQLException{
         for (Map.Entry<Long, ProcessHandle> entry : monitoredPids.entrySet()) {
             Long pid = entry.getKey();
             try {
                 DataStore data = timer.getOngoingEvent(pid);
                 if (data != null) {
-                    config.appendtoAppData(data);
-                    System.out.println("保存未完成进程: " + data.getProcName() + " (PID: " + pid + ")");
+                    config.saveProcessRecord(data);
+                    System.out.println("保存未完成进程: " + data.getProcessName() + " (PID: " + pid + ")");
                 }
-            } catch (IOException e) {
-                System.err.println("保存未完成进程数据失败 (PID:" + pid + "): " + e.getMessage());
+            } catch (SQLException e) {
+                System.err.println("保存失败 PID:" + pid + ": " + e.getMessage());
             }
         }
         
@@ -146,9 +131,9 @@ public class ProcessMonitor {
 
     /**
      * 扫描新进程,过滤掉已在监控列表中的进程,将新发现的匹配进程加入监控
-     * @throws IOException 若读取配置文件失败
+     * @throws SQLException 当获取目标进程列表失败时抛出
      */
-    private void scanNewProcess() throws IOException{
+    private void scanNewProcess() throws SQLException{
         findMatchingProcess().entrySet().stream()
             .filter(entry -> !monitoredPids.containsKey(entry.getKey()))
             .map(Map.Entry::getValue)
@@ -167,12 +152,12 @@ public class ProcessMonitor {
 
         ph.onExit().thenRun(() -> {
             try {
-                System.out.println("进程终止:" + timer.ongoingEvents.get(ph.pid()) + "(PID: " + ph.pid() + ")");
+                System.out.println("进程终止:" + timer.getEventName(ph.pid()) + "(PID: " + ph.pid() + ")");
                 monitoredPids.remove(ph.pid());
                 DataStore data = timer.setCompletedEvents(ph.pid());
-                config.appendtoAppData(data);
-            } catch (IOException e) {
-                System.err.println("进程终止处理失败 (PID:" + ph.pid() + "): " + e.getMessage());
+                config.saveProcessRecord(data);
+            } catch (SQLException ex) {
+                System.err.println("进程终止处理失败 (PID:" + ph.pid() + "): " + ex.getMessage());
             } finally{
                 timer.ongoingEvents.remove(ph.pid());
                 timer.startEvents.remove(ph.pid());
