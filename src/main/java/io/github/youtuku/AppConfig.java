@@ -1,5 +1,6 @@
 package io.github.youtuku;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -10,8 +11,8 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * 应用程序配置管理类，统一处理所有配置和数据文件操作。
@@ -39,15 +40,18 @@ public class AppConfig {
             stmt.execute("CREATE TABLE IF NOT EXISTS ProcessRecords (" +
                 "id INTEGER PRIMARY KEY AUTOINCREMENT," +
                 "ProcessName TEXT NOT NULL," +
+                "Category TEXT," +
                 "StartTime TIMESTAMP NOT NULL," +
-                "DurationSeconds INTEGER NOT NULL)");
+                "DurationSeconds INTEGER NOT NULL," +
+                "Path TEXT)");
             
             stmt.execute("CREATE TABLE IF NOT EXISTS TargetProcesses (" +
                 "id INTEGER PRIMARY KEY AUTOINCREMENT," +
-                "ProcessName TEXT NOT NULL UNIQUE)");
+                "ProcessName TEXT NOT NULL UNIQUE," +
+                "Category TEXT)");
             
             if (isTableEmpty(conn, "TargetProcesses")) {
-                stmt.execute("INSERT INTO TargetProcesses(ProcessName) VALUES ('steam.exe')");
+                stmt.execute("INSERT INTO TargetProcesses(ProcessName, Category) VALUES ('steam.exe', 'tool')");
             }
         } catch (SQLException | IOException e) {
             System.err.println("数据库初始化失败: " + e.getMessage());
@@ -71,20 +75,20 @@ public class AppConfig {
      * @throws SQLException 数据库连接错误时抛出
      * 示例返回值：["steam.exe"]
      */
-    public List<String> getTargetProcesses() throws SQLException{
-        List<String> processes = new ArrayList<>();
-        String sql = "SELECT ProcessName FROM TargetProcesses";
+    public Map<String, String> getTargetProcesses() throws SQLException{
+        Map<String, String> processes = new HashMap<>();
+        String sql = "SELECT ProcessName, Category FROM TargetProcesses";
 
         try(Connection conn = getConnection();
              Statement stmt = conn.createStatement();
              ResultSet rs = stmt.executeQuery(sql)) {
 
             while(rs.next()){
-                processes.add(rs.getString("ProcessName"));
+                processes.put(rs.getString("ProcessName") , rs.getString("Category"));
             }
         } catch (Exception e) {
             System.err.println("警告：获取目标进程失败，使用默认值");
-            return List.of("steam.exe");
+            return Map.of("steam.exe" , "tool");
         }
         return processes;
     }
@@ -96,14 +100,21 @@ public class AppConfig {
      * @throws SQLException 保存失败时抛出
      */
     public void saveProcessRecord(DataStore dataStore) throws SQLException{
-        String sql = "INSERT INTO ProcessRecords(ProcessName, StartTime, DurationSeconds) VALUES (?, ?, ?)";
+        String sql = "INSERT INTO ProcessRecords(ProcessName, StartTime, DurationSeconds, Path, Category)" +
+                        "VALUES (?, ?, ?, ?, " +
+                        "(SELECT Category FROM TargetProcesses WHERE ProcessName = ?))";
         
         try (Connection conn = getConnection();
             PreparedStatement pstmt = conn.prepareStatement(sql)) {
             
-            pstmt.setString(1, dataStore.getProcessName());
+            String baseName = new File(dataStore.getProcessName()).getName();
+
+            pstmt.setString(1, baseName);
             pstmt.setString(2, dataStore.getStartTime().toString());
             pstmt.setLong(3, dataStore.getDuration().getSeconds());
+            pstmt.setString(4, dataStore.getProcessName());
+            pstmt.setString(5, baseName);
+
             pstmt.executeUpdate();
             
         } catch (SQLException | IOException e) {

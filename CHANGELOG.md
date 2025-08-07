@@ -1,5 +1,26 @@
 # 更新日志
 
+## [2.1] - 2025-08-05 
+### 新增功能
+- **动态进程分类**  
+  - 新增 `Category` 列至 `TargetProcesses` 表，支持自定义类别（如：`"game"`, `"work"`, `"tool"`）
+  - 智能关联机制：`ProcessRecords` 表自动获取对应类别  
+    ```sql
+    INSERT INTO ProcessRecords(Category) 
+    VALUES ((SELECT Category FROM TargetProcesses WHERE ProcessName=?))
+    ```
+  
+- **进程路径溯源**  
+  - `ProcessRecords` 表新增 `Path` 列，完整记录进程位置  
+  - 存储格式示例：  
+    `C:\Program Files\Steam\steam.exe` (Windows)  
+    `/Applications/Google Chrome.app` (macOS)
+
+### 数据优化
+- **名称/路径分离存储**  
+  - `ProcessName` 列 → 仅存基础名称（`explorer.exe`）  
+  - `Path` 列 → 存储完整路径（`C:\Windows\explorer.exe`）
+
 ## [2.0] - 2025-07-22
 ### 架构重构
 - **存储引擎迁移**：JSON → SQLite 数据库

@@ -2,6 +2,8 @@ package io.github.youtuku;
 
 import java.sql.SQLException;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * 主类,包含程序入口和主流程
@@ -18,8 +20,10 @@ public class Main {
             System.out.println("数据库初始化完成: " + AppConfig.DB_PATH);
             
             // 打印配置信息
-            List<String> targets = config.getTargetProcesses();
-            System.out.println("监控目标进程: " + String.join(", ", targets));
+            Map<String, String> targets = config.getTargetProcesses();
+            List<String> targetList = targets.keySet().stream()
+                                    .collect(Collectors.toList());
+            System.out.println("监控目标进程: " + String.join(", ", targetList));
             
             // 2. 初始化核心组件
             TimeCalculator timer = new TimeCalculator();

@@ -15,15 +15,15 @@
     自动创建用户目录 (`~/Documents/ProcessTrace`)  
     创建 SQLite 数据库 (`DataBase.db`) 并初始化表结构  
     自动插入默认监控进程 (`steam.exe`)
-4. **数据持久化**  
+4. **动态分类**  
+    为目标进程设置类别 (如：游戏、工具、工作等)   
+    进程记录自动关联类别
+5. **数据持久化**  
     SQLite 数据库存储进程运行记录  
     支持高效查询和统计分析
-5. **跨平台支持**  
-    兼容 `Windows/Linux/macOS` 系统  
-    自动处理不同操作系统的进程路径格式
-6. **安全可靠**  
-    使用预编译语句防止 SQL 注入  
-    完善的异常处理和错误日志
+6. **路径溯源**  
+    记录进程的完整路径  
+    支持跨平台路径格式 (Windows/Linux/macOS)
 
 ## 使用说明
 1. **运行程序**
@@ -47,24 +47,31 @@
    -- 进程记录表
    CREATE TABLE ProcessRecords (
      id INTEGER PRIMARY KEY AUTOINCREMENT,
-     ProcessName TEXT NOT NULL,
-     StartTime TIMESTAMP NOT NULL,
-     DurationSeconds INTEGER NOT NULL
+     ProcessName TEXT NOT NULL,      -- 进程基础名称
+     Category TEXT,                  -- 进程分类
+     StartTime TIMESTAMP NOT NULL,   -- 启动时间
+     DurationSeconds INTEGER NOT NULL,-- 持续时长(秒)
+     Path TEXT                       -- 进程完整路径
    );
    
    -- 目标进程配置表
    CREATE TABLE TargetProcesses (
      id INTEGER PRIMARY KEY AUTOINCREMENT,
-     ProcessName TEXT NOT NULL UNIQUE
+     ProcessName TEXT NOT NULL UNIQUE, -- 进程名称
+     Category TEXT                    -- 自定义分类
    );
 
 4. **配置说明**  
 
-    -**默认监控进程**：`steam.exe`  
+    -**默认监控进程**：`steam.exe` (类别: tool)  
     -**修改监控进程**：
     ```sql  
     --添加
-    INSERT INTO TargetProcesses(ProcessName) VALUES ('explorer.exe');  
+    INSERT INTO TargetProcesses(ProcessName, Category) 
+    VALUES 
+    ('explorer.exe', 'system'),
+    ('chrome.exe', 'browser'),
+    ('minecraft.exe', 'game');  
     --删除
     DELETE FROM TargetProcesses WHERE ProcessName = 'steam.exe';
 

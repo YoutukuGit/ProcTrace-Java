@@ -41,7 +41,7 @@ public class ProcessMonitor {
      * @return 包含所有目标进程名的列表(已去除空格)
      * @throws SQLException 当配置文件不存在、格式错误或读取失败时抛出
      */
-    private List<String> getTargetProcesses() throws SQLException{
+    private Map<String, String> getTargetProcesses() throws SQLException{
         return config.getTargetProcesses();
         
     }
@@ -70,9 +70,11 @@ public class ProcessMonitor {
      * @throws SQLException 当获取目标进程列表失败时抛出
      */
     private Map<Long, ProcessHandle> findMatchingProcess() throws SQLException{
-        List<String> targets = getTargetProcesses();
+        Map<String, String> targetMap = getTargetProcesses();
+        List<String> targetList = targetMap.keySet().stream()
+                                    .collect(Collectors.toList());
         return ProcessHandle.allProcesses()
-            .filter(ph -> isTargetProcess(ph, targets))
+            .filter(ph -> isTargetProcess(ph, targetList))
             .collect(Collectors.toMap(
                 ProcessHandle::pid, 
                 Process -> Process));
@@ -146,7 +148,6 @@ public class ProcessMonitor {
      */
     private void monitorProcess(ProcessHandle ph) {
         String processName = ph.info().command().orElse("Unknown");
-        
         monitoredPids.put(ph.pid(), ph);
         timer.setStartEvents(ph.pid(), processName);
 
